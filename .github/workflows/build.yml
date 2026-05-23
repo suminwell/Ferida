@@ -1,4 +1,4 @@
-name: Florida
+name: Build
 
 on:
   schedule:
