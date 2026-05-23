@@ -10,9 +10,11 @@ on:
       - ".github/workflows/build.yml"
       - "patches/**"
 
-jobs: 
+jobs:
   check_version:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
 
     outputs:
       FRIDA_VERSION: ${{ steps.pullFridaLatestRelease.outputs.FRIDA_VERSION }}
@@ -88,6 +90,8 @@ jobs:
     needs: check_version
     runs-on: ubuntu-22.04
     if: needs.check_version.outputs.ALREADY_RELEASE != '1'
+    permissions:
+      contents: write
 
     steps:
       - uses: softprops/action-gh-release@v2.1.0
@@ -103,6 +107,8 @@ jobs:
   android_build:
     runs-on: ubuntu-22.04
     needs: [check_version, create_release]
+    permissions:
+      contents: write
 
     steps:
     - uses: actions/checkout@v3
