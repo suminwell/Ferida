@@ -198,7 +198,11 @@ jobs:
         do
           mkdir build-$ARCH
           cd build-$ARCH
-          ../frida/configure --host=$ARCH
+          if [ "$ARCH" = "android-arm" ]; then
+            OMVLL_PLUGIN= ../frida/configure --host=$ARCH
+          else
+            ../frida/configure --host=$ARCH
+          fi
           make
           cd ..
         done
