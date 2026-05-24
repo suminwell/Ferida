@@ -1,6 +1,6 @@
 name: Build
 
-# O-MVLL is enabled by default for Android builds using the updated refreshed plugin release.
+# O-MVLL is enabled by default for Android builds using the TargetParser refreshed plugin release.
 on:
   schedule:
     - cron: "0 9/12 * * *"
