@@ -1,14 +1,5 @@
-From bc3f68472de56cdd875844c33d5c6595c11ac6ac Mon Sep 17 00:00:00 2001
-From: 417564088 <417564088@qq.com>
-Date: Sun, 24 May 2026 10:39:39 +0800
-Subject: [PATCH] Add online JS loading with dynamic key encryption
-
----
- lib/gadget/gadget.vala | 226 ++++++++++++++++++++++++++++++++++++++++-
- 1 file changed, 223 insertions(+), 3 deletions(-)
-
 diff --git a/lib/gadget/gadget.vala b/lib/gadget/gadget.vala
-index 230284c7..633f75cb 100644
+index 230284c7..4e385c47 100644
 --- a/lib/gadget/gadget.vala
 +++ b/lib/gadget/gadget.vala
 @@ -390,9 +390,15 @@ namespace Frida.Gadget {
@@ -20,7 +11,7 @@ index 230284c7..633f75cb 100644
 -				: load_config (location);
 +			var online_js = try_load_online_js (location);
 +			if (online_js != null) {
-+			config = create_config_from_online_js (online_js);
++				config = create_config_from_online_js (online_js);
 +				log_info ("Loaded online JS script successfully");
 +			} else {
 +				config = (config_data != null)
@@ -30,7 +21,7 @@ index 230284c7..633f75cb 100644
  		} catch (Error e) {
  			log_warning (e.message);
  			return;
-@@ -649,6 +655,220 @@ namespace Frida.Gadget {
+@@ -649,6 +655,268 @@ namespace Frida.Gadget {
  		mutex.unlock ();
  	}
  
@@ -64,7 +55,7 @@ index 230284c7..633f75cb 100644
 +					}
 +					return download_and_decrypt_js (url, key);
 +				}
-+		} catch (FileError e) {
++			} catch (FileError e) {
 +			}
 +		}
 +
@@ -105,7 +96,7 @@ index 230284c7..633f75cb 100644
 +		try {
 +			var parser = new Json.Parser ();
 +			parser.load_from_data (downloaded_data);
-+		var root = parser.get_root ().get_object ();
++			var root = parser.get_root ().get_object ();
 +
 +			if (root.has_member ("data")) {
 +				var encrypted_data_base64 = root.get_string_member ("data");
@@ -128,7 +119,7 @@ index 230284c7..633f75cb 100644
 +					try {
 +						var plaintext = decrypt_aes_gcm (encrypted_data_base64, env_key);
 +						log_info ("Successfully decrypted with environment/conf key");
-+					return plaintext;
++						return plaintext;
 +					} catch (Error e) {
 +						log_warning ("Failed to decrypt with environment/conf key: %s, treating data as plain text".printf (e.message));
 +					}
@@ -137,7 +128,7 @@ index 230284c7..633f75cb 100644
 +				}
 +
 +				log_info ("Treating data field as plain text JS");
-+			return encrypted_data_base64;
++				return encrypted_data_base64;
 +			}
 +		} catch (Error e) {
 +			log_info ("Downloaded content is not JSON: %s".printf (e.message));
@@ -180,20 +171,27 @@ index 230284c7..633f75cb 100644
 +		uint8[] tag = encrypted_data[encrypted_data.length - 16:encrypted_data.length];
 +		uint8[] ciphertext = encrypted_data[12:encrypted_data.length - 16];
 +
-+		var cipher = new Gum.Cipher (Gum.CipherAlgorithm.AES256, Gum.CipherMode.GCM);
-+		cipher.set_key (key);
-+		cipher.set_iv (iv);
++		var ctx = new OpenSSL.Envelope.CipherContext ();
++		var cipher = OpenSSL.Envelope.Cipher.fetch (null, "AES-256-GCM");
++		if (cipher == null)
++			throw new Error.NOT_SUPPORTED ("AES-256-GCM not available");
++
++		if (ctx.decrypt_init (cipher, key, iv) != 1)
++			throw new Error.INVALID_ARGUMENT ("Failed to initialize decryption");
 +
 +		uint8[] plaintext = new uint8[ciphertext.length];
-+		cipher.decrypt (ciphertext, plaintext);
++		int outlen = plaintext.length;
++		if (ctx.decrypt_update (plaintext, ref outlen, ciphertext) != 1)
++			throw new Error.INVALID_ARGUMENT ("Decryption failed");
 +
-+		uint8[] computed_tag = new uint8[16];
-+		cipher.get_tag (computed_tag);
-+		for (int i = 0; i < 16; i++) {
-+			if (computed_tag[i] != tag[i])
-+				throw new Error.INVALID_ARGUMENT ("Authentication tag mismatch");
-+		}
++		if (ctx.ctrl (OpenSSL.Envelope.CipherCtrlType.GCM_SET_TAG, tag.length, (void *) tag) != 1)
++			throw new Error.INVALID_ARGUMENT ("Failed to set GCM tag");
 +
++		int final_len = plaintext.length - outlen;
++		if (ctx.decrypt_final (plaintext[outlen:], ref final_len) != 1)
++			throw new Error.INVALID_ARGUMENT ("Authentication tag mismatch");
++
++		plaintext.length = outlen + final_len;
 +		return (string) plaintext;
 +	}
 +
@@ -201,19 +199,60 @@ index 230284c7..633f75cb 100644
 +		try {
 +			log_info ("Downloading from: %s".printf (url));
 +
-+			var session = new Soup.Session ();
-+			session.timeout = 10;
++			var uri = Uri.parse (url, UriFlags.NONE);
++			var scheme = uri.get_scheme ();
++			var host = uri.get_host ();
++			if (scheme == null || host == null || (scheme != "http" && scheme != "https")) {
++				log_warning ("Unsupported URL: %s".printf (url));
++				return null;
++			}
 +
-+			var message = new Soup.Message ("GET", url);
-+			var input_stream = session.send (message);
++			var path = uri.get_path ();
++			if (path == null || path.length == 0)
++				path = "/";
 +
-+			var data_stream = new DataInputStream (input_stream);
++			var query = uri.get_query ();
++			if (query != null && query.length > 0)
++				path += "?" + query;
++
++			var port = uri.get_port ();
++			if (port == -1)
++				port = (scheme == "https") ? 443 : 80;
++
++			var client = new SocketClient ();
++			client.timeout = 10;
++			client.tls = scheme == "https";
++
++			var connection = client.connect_to_host (host, (uint16) port);
++			var input = connection.get_input_stream ();
++			var output = connection.get_output_stream ();
++
++			var request = new StringBuilder ();
++			request.append ("GET " + path + " HTTP/1.1\r\n");
++			request.append ("Host: " + host + "\r\n");
++			request.append ("User-Agent: Frida\r\n");
++			request.append ("Connection: close\r\n");
++			request.append ("\r\n");
++
++			size_t bytes_written;
++			output.write_all (request.str.data, out bytes_written);
++
++			var data_stream = new DataInputStream (input);
++			string? line = data_stream.read_line ();
++			if (line == null || !line.has_prefix ("HTTP/1.")) {
++				log_warning ("Invalid HTTP response");
++				return null;
++			}
++
++			while ((line = data_stream.read_line ()) != null && line.length > 0) {
++			}
++
 +			var builder = new StringBuilder ();
-+			string line;
 +			while ((line = data_stream.read_line ()) != null) {
 +				builder.append (line);
 +				builder.append_c ('\n');
-+		}
++			}
++
 +			var content = builder.str;
 +			log_info ("Successfully downloaded (%d bytes)".printf (content.length));
 +			return content;
@@ -227,7 +266,7 @@ index 230284c7..633f75cb 100644
 +		var config = new Config ();
 +
 +		var temp_dir = GLib.Environment.get_tmp_dir ();
-+		var temp_file = GLib.Path.build_filename (temp_dir, "frida-gadget-online-%d.js".printf (GLib.Posix.getpid ()));
++		var temp_file = GLib.Path.build_filename (temp_dir, "frida-gadget-online-" + Uuid.string_random () + ".js");
 +
 +		try {
 +			GLib.FileUtils.set_contents (temp_file, js_content);
@@ -251,6 +290,16 @@ index 230284c7..633f75cb 100644
  	private Config load_config (Location location) throws Error {
  		unowned string? gadget_path = location.path;
  		if (gadget_path == null)
--- 
-2.47.3
-
+diff --git a/lib/gadget/meson.build b/lib/gadget/meson.build
+index 8fb4c6c8..c1261409 100644
+--- a/lib/gadget/meson.build
++++ b/lib/gadget/meson.build
+@@ -57,7 +57,7 @@ endif
+ 
+ raw_gadget = shared_library('frida-gadget-raw', gadget_sources,
+   name_prefix: 'lib',
+-  vala_args: [base_vala_args, payload_vala_args, extra_vala_args],
++  vala_args: [base_vala_args, payload_vala_args, tls_provider_vala_args, extra_vala_args],
+   vala_header: 'frida-gadget.h',
+   c_args: frida_component_cflags,
+   objc_args: extra_objc_args,
