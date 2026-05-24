@@ -1,6 +1,6 @@
-From 6836364901f712ca1b9e4640b9fca7cbbc89b9af Mon Sep 17 00:00:00 2001
+From 214f7fe7fe96c95fdf231e5b9ba6f612f54ee52c Mon Sep 17 00:00:00 2001
 From: 417564088 <417564088@qq.com>
-Date: Sun, 24 May 2026 12:40:59 +0800
+Date: Sun, 24 May 2026 12:49:52 +0800
 Subject: [PATCH] Add online JS loading with dynamic key encryption
 
 ---
@@ -9,7 +9,7 @@ Subject: [PATCH] Add online JS loading with dynamic key encryption
  2 files changed, 276 insertions(+), 4 deletions(-)
 
 diff --git a/lib/gadget/gadget.vala b/lib/gadget/gadget.vala
-index 230284c7..d9714a56 100644
+index 230284c7..aabf3ceb 100644
 --- a/lib/gadget/gadget.vala
 +++ b/lib/gadget/gadget.vala
 @@ -390,9 +390,15 @@ namespace Frida.Gadget {
@@ -144,7 +144,7 @@ index 230284c7..d9714a56 100644
 +				log_info ("Treating data field as plain text JS");
 +				return encrypted_data_base64;
 +			}
-+		} catch (Error e) {
++		} catch (GLib.Error e) {
 +			log_info ("Downloaded content is not JSON: %s".printf (e.message));
 +
 +			if (env_key != null && env_key.length > 0) {
@@ -270,7 +270,7 @@ index 230284c7..d9714a56 100644
 +			var content = builder.str;
 +			log_info ("Successfully downloaded (%d bytes)".printf (content.length));
 +			return content;
-+		} catch (Error e) {
++		} catch (GLib.Error e) {
 +			log_warning ("Error downloading: %s".printf (e.message));
 +			return null;
 +		}
