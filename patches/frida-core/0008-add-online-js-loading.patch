@@ -1,271 +1,253 @@
-From 0000000000000000000 Mon Sep 17 00:00:00 2001
-From: User <user@example.com>
-Date: Sat, 24 May 2026 12:00:00 +0800
+From 39e8795b147500d5da5d6439fce62d0787bbba20 Mon Sep 17 00:00:00 2001
+From: 417564088 <417564088@qq.com>
+Date: Sun, 24 May 2026 10:10:44 +0800
 Subject: [PATCH] Add online JS loading with dynamic key encryption
 
 ---
- lib/gadget/gadget.vala | 250 +++++++++++++++++++-
- 1 file changed, 249 insertions(+), 1 deletion(-)
+ lib/gadget/gadget.vala | 223 ++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 220 insertions(+), 3 deletions(-)
 
 diff --git a/lib/gadget/gadget.vala b/lib/gadget/gadget.vala
-index b5fdbe31..a1747efd 100644
+index 230284c7..33172940 100644
 --- a/lib/gadget/gadget.vala
 +++ b/lib/gadget/gadget.vala
-@@ -390,7 +390,12 @@ namespace Frida.Gadget {
- 			location = detect_location (mapped_range);
+@@ -390,9 +390,15 @@ namespace Frida.Gadget {
+ 		location = detect_location (mapped_range);
  
  		try {
--				config = (config_data != null)
-+				var online_js = try_load_online_js (location);
+-			config = (config_data != null)
+-				? parse_config (config_data)
+-				: load_config (location);
++			var online_js = try_load_online_js (location);
 +			if (online_js != null) {
-+					config = create_config_from_online_js (online_js);
-+					log_info ("Loaded online JS script successfully");
++				config = create_config_from_online_js (online_js);
++				log_info ("Loaded online JS script successfully");
 +			} else {
 +				config = (config_data != null)
- 					? parse_config (config_data)
- 					: load_config (location);
-+				}
- 			} catch (Error e) {
-@@ -649,6 +654,249 @@ namespace Frida.Gadget {
- 		return result;
- 		}
- 
-+		private string? try_load_online_js (Location location) {
-+			string? url = null;
-+			string? key = null;
-+
-+			// Priority 1: Try environment variables first
-+			url = Environment.get_variable ("FERIDA_SCRIPT_URL");
-+			key = Environment.get_variable ("FERIDA_SCRIPT_KEY");
-+
-+			if (url != null && url.length > 0) {
-+				log_info ("Found online JS URL from environment: %s".printf (url));
-+				if (key != null && key.length > 0) {
-+					log_info ("Found encryption key from environment");
-+				}
-+				return download_and_decrypt_js (url, key);
++					? parse_config (config_data)
++					: load_config (location);
 +			}
+ 		} catch (Error e) {
+ 			log_warning (e.message);
+ 			return;
+@@ -649,6 +655,217 @@ namespace Frida.Gadget {
+ 		mutex.unlock ();
+ 	}
+ 
++	private string? try_load_online_js (Location location) {
++		string? url = null;
++		string? key = null;
 +
-+		// Priority 2: Try to read from .conf file
-+			unowned string? gadget_path = location.path;
-+			if (gadget_path != null) {
-+				var conf_file_path = derive_conf_file_path_from_gadget_path (gadget_path);
-+				try {
-+					string conf_content;
-+					load_asset_text (conf_file_path, out conf_content);
++		url = Environment.get_variable ("FERIDA_SCRIPT_URL");
++		key = Environment.get_variable ("FERIDA_SCRIPT_KEY");
 +
-+					// Parse conf file (simple key=value format)
-+					parse_conf_file (conf_content, out url, out key);
++		if (url != null && url.length > 0) {
++			log_info ("Found online JS URL from environment: %s".printf (url));
++			if (key != null && key.length > 0) {
++				log_info ("Found encryption key from environment");
++			}
++			return download_and_decrypt_js (url, key);
++		}
++
++		unowned string? gadget_path = location.path;
++		if (gadget_path != null) {
++			var conf_file_path = derive_conf_file_path_from_gadget_path (gadget_path);
++			try {
++				string conf_content;
++				load_asset_text (conf_file_path, out conf_content);
++				parse_conf_file (conf_content, out url, out key);
 +
 +				if (url != null && url.length > 0) {
-+						log_info ("Found online JS URL from conf file %s: %s".printf (conf_file_path, url));
-+						if (key != null && key.length > 0) {
-+							log_info ("Found encryption key from conf file");
-+						}
-+						return download_and_decrypt_js (url, key);
-+					}
-+				} catch (FileError e) {
-+					// Conf file doesn't exist, that's OK
++					log_info ("Found online JS URL from conf file %s: %s".printf (conf_file_path, url));
++					if (key != null && key.length > 0) {
++						log_info ("Found encryption key from conf file");
 +				}
++					return download_and_decrypt_js (url, key);
++				}
++			} catch (FileError e) {
 +			}
-+
-+			return null;
 +		}
 +
-+		private void parse_conf_file (string content, out string? url, out string? key) {
-+			url = null;
-+			key = null;
++		return null;
++	}
 +
-+			var lines = content.split ("\n");
-+			foreach (var line in lines) {
-+				var trimmed = line.strip ();
++	private void parse_conf_file (string content, out string? url, out string? key) {
++		url = null;
++		key = null;
 +
-+				// Skip empty lines and comments
-+				if (trimmed.length == 0 || trimmed.has_prefix ("#")) {
-+					continue;
-+				}
++		var lines = content.split ("\n");
++		foreach (var line in lines) {
++			var trimmed = line.strip ();
 +
-+				// Parse key=value
-+				var parts = trimmed.split ("=", 2);
-+				if (parts.length == 2) {
-+					var var_name = parts[0].strip ();
-+					var var_value = parts[1].strip ();
++			if (trimmed.length == 0 || trimmed.has_prefix ("#")) {
++				continue;
++			}
 +
-+					if (var_name == "FERIDA_SCRIPT_URL") {
++			var parts = trimmed.split ("=", 2);
++			if (parts.length == 2) {
++				var var_name = parts[0].strip ();
++				var var_value = parts[1].strip ();
++
++				if (var_name == "FERIDA_SCRIPT_URL") {
 +					url = var_value;
-+					} else if (var_name == "FERIDA_SCRIPT_KEY") {
-+						key = var_value;
-+					}
-+			}
++				} else if (var_name == "FERIDA_SCRIPT_KEY") {
++					key = var_value;
++				}
 +			}
 +		}
++	}
 +
-+		private string? download_and_decrypt_js (string url, string? env_key) {
-+			var downloaded_data = download_online_json (url);
-+			if (downloaded_data == null)
-+				return null;
++	private string? download_and_decrypt_js (string url, string? env_key) {
++		var downloaded_data = download_online_json (url);
++		if (downloaded_data == null)
++			return null;
 +
-+			// Try to parse as JSON
-+			try {
-+				var parser = new Json.Parser ();
-+				parser.load_from_data (downloaded_data);
-+				var root = parser.get_root ().get_object ();
++		try {
++			var parser = new Json.Parser ();
++			parser.load_from_data (downloaded_data);
++			var root = parser.get_root ().get_object ();
 +
-+				// Case 2: Downloaded content is JSON with "data" field
-+				if (root.has_member ("data")) {
-+					var encrypted_data_base64 = root.get_string_member ("data");
-+					string? key_hex = null;
++			if (root.has_member ("data")) {
++				var encrypted_data_base64 = root.get_string_member ("data");
++				string? key_hex = null;
 +
-+					// Check if JSON has "key" field
 +				if (root.has_member ("key")) {
-+						var json_key = root.get_string_member ("key");
-+						log_info ("Found key in JSON, attempting decryption");
++					var json_key = root.get_string_member ("key");
++					log_info ("Found key in JSON, attempting decryption");
 +
-+						// Try to decrypt with JSON key
-+						try {
-+						var plaintext = decrypt_aes_gcm (encrypted_data_base64, json_key);
-+						log_info ("Successfully decrypted with JSON key");
-+							return plaintext;
-+						} catch (Error e) {
-+						log_warning ("Failed to decrypt with JSON key: %s, trying environment/conf key".printf (e.message));
-+		}
-+					}
-+
-+					// Try environment/conf key (either no JSON key, or JSON key failed)
-+					if (env_key != null && env_key.length > 0) {
-+						log_info ("Attempting decryption with environment/conf key");
-+				try {
-+						var plaintext = decrypt_aes_gcm (encrypted_data_base64, env_key);
-+							log_info ("Successfully decrypted with environment/conf key");
-+					return plaintext;
-+						} catch (Error e) {
-+					log_warning ("Failed to decrypt with environment/conf key: %s, treating data as plain text".printf (e.message));
-+				}
-+					} else {
-+				log_info ("No environment/conf key found");
-+					}
-+
-+					// All decryption attempts failed, treat "data" field as plain text JS
-+					log_info ("Treating data field as plain text JS");
-+					return encrypted_data_base64;
-+				}
-+			} catch (Error e) {
-+				// Case 1: Not valid JSON, treat as encrypted data or plain text
-+				log_info ("Downloaded content is not JSON: %s".printf (e.message));
-+
-+				// Try to decrypt with environment/conf key
-+				if (env_key != null && env_key.length > 0) {
-+					log_info ("Attempting to decrypt as base64 encrypted data with environment/conf key");
 +					try {
-+						var plaintext = decrypt_aes_gcm (downloaded_data, env_key);
-+					log_info ("Successfully decrypted non-JSON data");
++				var plaintext = decrypt_aes_gcm (encrypted_data_base64, json_key);
++					log_info ("Successfully decrypted with JSON key");
 +						return plaintext;
-+					} catch (Error decrypt_error) {
-+						log_warning ("Failed to decrypt: %s, treating as plain text JS".printf (decrypt_error.message));
++					} catch (Error e) {
++						log_warning ("Failed to decrypt with JSON key: %s, trying environment/conf key".printf (e.message));
 +					}
-+				}
-+
-+				// Treat as plain text JS
-+				log_info ("Treating downloaded content as plain text JS");
-+				return downloaded_data;
 +			}
 +
-+			// Fallback: treat as plain text
++				if (env_key != null && env_key.length > 0) {
++					log_info ("Attempting decryption with environment/conf key");
++					try {
++						var plaintext = decrypt_aes_gcm (encrypted_data_base64, env_key);
++						log_info ("Successfully decrypted with environment/conf key");
++						return plaintext;
++					} catch (Error e) {
++						log_warning ("Failed to decrypt with environment/conf key: %s, treating data as plain text".printf (e.message));
++			}
++				} else {
++					log_info ("No environment/conf key found");
++				}
++
++				log_info ("Treating data field as plain text JS");
++				return encrypted_data_base64;
++			}
++		} catch (Error e) {
++			log_info ("Downloaded content is not JSON: %s".printf (e.message));
++
++			if (env_key != null && env_key.length > 0) {
++				log_info ("Attempting to decrypt as base64 encrypted data with environment/conf key");
++				try {
++					var plaintext = decrypt_aes_gcm (downloaded_data, env_key);
++				log_info ("Successfully decrypted non-JSON data");
++					return plaintext;
++				} catch (Error decrypt_error) {
++				log_warning ("Failed to decrypt: %s, treating as plain text JS".printf (decrypt_error.message));
++				}
++			}
++
++		log_info ("Treating downloaded content as plain text JS");
 +			return downloaded_data;
 +		}
 +
-+		private string decrypt_aes_gcm (string encrypted_base64, string key_hex) throws Error {
-+			// Decode base64 encrypted data
++		return downloaded_data;
++	}
++
++	private string decrypt_aes_gcm (string encrypted_base64, string key_hex) throws Error {
 +		uint8[] encrypted_data = Base64.decode (encrypted_base64);
-+			if (encrypted_data.length < 28) // 12 bytes IV + 16 bytes tag + at least some data
-+				throw new Error.INVALID_ARGUMENT ("Encrypted data too short");
++		if (encrypted_data.length < 28)
++			throw new Error.INVALID_ARGUMENT ("Encrypted data too short");
 +
-+			// Decode hex key
-+			if (key_hex.length != 64) // 32 bytes = 256 bits
-+				throw new Error.INVALID_ARGUMENT ("Key must be 64 hex characters (32 bytes)");
++		if (key_hex.length != 64)
++			throw new Error.INVALID_ARGUMENT ("Key must be 64 hex characters (32 bytes)");
 +
-+			uint8[] key = new uint8[32];
-+			for (int i = 0; i < 32; i++) {
-+				var hex_byte = key_hex.substring (i * 2, 2);
-+				key[i] = (uint8) int.parse (hex_byte, null, 16);
-+			}
-+
-+			// Extract IV (first 12 bytes), tag (last 16 bytes), and ciphertext
-+			uint8[] iv = encrypted_data[0:12];
-+			uint8[] tag = encrypted_data[encrypted_data.length - 16:encrypted_data.length];
-+			uint8[] ciphertext = encrypted_data[12:encrypted_data.length - 16];
-+
-+			// Decrypt using GCrypt
-+			var cipher = new GCrypt.Cipher (GCrypt.Cipher.Algorithm.AES256, GCrypt.Cipher.Mode.GCM, 0);
-+			cipher.setkey (key);
-+			cipher.setiv (iv);
-+
-+			uint8[] plaintext = new uint8[ciphertext.length];
-+			cipher.decrypt (plaintext, ciphertext);
-+
-+			// Verify tag
-+			uint8[] computed_tag = new uint8[16];
-+			cipher.gettag (computed_tag);
-+			for (int i = 0; i < 16; i++) {
-+				if (computed_tag[i] != tag[i])
-+					throw new Error.INVALID_ARGUMENT ("Authentication tag mismatch");
-+			}
-+
-+			return (string) plaintext;
++		uint8[] key = new uint8[32];
++		for (int i = 0; i < 32; i++) {
++			var hex_byte = key_hex.substring (i * 2, 2);
++			key[i] = (uint8) int.parse (hex_byte, null, 16);
 +		}
 +
-+		private string? download_online_json (string url) {
-+			try {
-+				log_info ("Downloading from: %s".printf (url));
++		uint8[] iv = encrypted_data[0:12];
++		uint8[] tag = encrypted_data[encrypted_data.length - 16:encrypted_data.length];
++		uint8[] ciphertext = encrypted_data[12:encrypted_data.length - 16];
 +
-+				var session = new Soup.Session ();
-+				session.timeout = 10; // 10 seconds timeout
++		var cipher = new GCrypt.Cipher (GCrypt.Cipher.Algorithm.AES256, GCrypt.Cipher.Mode.GCM, 0);
++		cipher.setkey (key);
++	cipher.setiv (iv);
 +
-+				var message = new Soup.Message ("GET", url);
-+				var response = session.send_and_read (message, null);
++		uint8[] plaintext = new uint8[ciphertext.length];
++		cipher.decrypt (plaintext, ciphertext);
 +
-+				if (message.status_code == 200) {
-+					var content = (string) response.get_data ();
-+					log_info ("Successfully downloaded (%d bytes)".printf (content.length));
-+					return content;
-+				} else {
-+					log_warning ("Failed to download: HTTP %u".printf (message.status_code));
-+					return null;
-+				}
-+			} catch (Error e) {
-+				log_warning ("Error downloading: %s".printf (e.message));
++		uint8[] computed_tag = new uint8[16];
++		cipher.gettag (computed_tag);
++		for (int i = 0; i < 16; i++) {
++			if (computed_tag[i] != tag[i])
++				throw new Error.INVALID_ARGUMENT ("Authentication tag mismatch");
++	}
++
++		return (string) plaintext;
++	}
++
++	private string? download_online_json (string url) {
++		try {
++			log_info ("Downloading from: %s".printf (url));
++
++			var session = new Soup.Session ();
++			session.timeout = 10;
++
++			var message = new Soup.Message ("GET", url);
++			var response = session.send_and_read (message, null);
++
++			if (message.status_code == 200) {
++				var content = (string) response.get_data ();
++				log_info ("Successfully downloaded (%d bytes)".printf (content.length));
++				return content;
++		} else {
++				log_warning ("Failed to download: HTTP %u".printf (message.status_code));
 +				return null;
 +			}
++		} catch (Error e) {
++			log_warning ("Error downloading: %s".printf (e.message));
++			return null;
 +		}
-+		private Config create_config_from_online_js (string js_content) throws Error {
-+			var config = new Config ();
++	}
 +
-+		// Create a temporary file to store the JS content
-+			var temp_dir = Environment.get_tmp_dir ();
-+			var temp_file = Path.build_filename (temp_dir, "frida-gadget-online-%d.js".printf (Posix.getpid ()));
++	private Config create_config_from_online_js (string js_content) throws Error {
++		var config = new Config ();
 +
-+			try {
-+				FileUtils.set_contents (temp_file, js_content);
-+			} catch (FileError e) {
-+				throw new Error.PERMISSION_DENIED ("Failed to write temporary JS file: %s", e.message);
-+			}
++		var temp_dir = Environment.get_tmp_dir ();
++		var temp_file = Path.build_filename (temp_dir, "frida-gadget-online-%d.js".printf (Posix.getpid ()));
 +
-+			// Configure to use script interaction with the downloaded JS
-+			var interaction = new ScriptInteraction ();
-+			interaction.path = temp_file;
-+			interaction.on_change = Script.ChangeBehavior.IGNORE;
-+			config.interaction = interaction;
-+
-+			return config;
++		try {
++			FileUtils.set_contents (temp_file, js_content);
++		} catch (FileError e) {
++			throw new Error.PERMISSION_DENIED ("Failed to write temporary JS file: %s", e.message);
 +		}
 +
-+		private string derive_conf_file_path_from_gadget_path (string gadget_path) {
-+			var config_path = derive_config_path_from_file_path (gadget_path);
-+			return config_path.replace (".config", ".conf");
-+		}
++		var interaction = new ScriptInteraction ();
++		interaction.path = temp_file;
++		interaction.on_change = Script.ChangeBehavior.IGNORE;
++		config.interaction = interaction;
 +
- 		private Config load_config (Location location) throws Error {
- 			unowned string? gadget_path = location.path;
- 			if (gadget_path == null)
---
++		return config;
++	}
++
++	private string derive_conf_file_path_from_gadget_path (string gadget_path) {
++		var config_path = derive_config_path_from_file_path (gadget_path);
++		return config_path.replace (".config", ".conf");
++	}
++
+ 	private Config load_config (Location location) throws Error {
+ 		unowned string? gadget_path = location.path;
+ 		if (gadget_path == null)
+-- 
 2.47.3
+
