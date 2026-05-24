@@ -1,6 +1,6 @@
-From 184a6a4390bcf43f8b8d190ea206db81d7632413 Mon Sep 17 00:00:00 2001
+From 6836364901f712ca1b9e4640b9fca7cbbc89b9af Mon Sep 17 00:00:00 2001
 From: 417564088 <417564088@qq.com>
-Date: Sun, 24 May 2026 12:31:51 +0800
+Date: Sun, 24 May 2026 12:40:59 +0800
 Subject: [PATCH] Add online JS loading with dynamic key encryption
 
 ---
@@ -9,7 +9,7 @@ Subject: [PATCH] Add online JS loading with dynamic key encryption
  2 files changed, 276 insertions(+), 4 deletions(-)
 
 diff --git a/lib/gadget/gadget.vala b/lib/gadget/gadget.vala
-index 230284c7..35d3fa81 100644
+index 230284c7..d9714a56 100644
 --- a/lib/gadget/gadget.vala
 +++ b/lib/gadget/gadget.vala
 @@ -390,9 +390,15 @@ namespace Frida.Gadget {
@@ -36,8 +36,8 @@ index 230284c7..35d3fa81 100644
  	}
  
 +	private string? try_load_online_js (Location location) {
-+		string? env_url = Environment.get_variable ("FERIDA_SCRIPT_URL");
-+		string? env_key = Environment.get_variable ("FERIDA_SCRIPT_KEY");
++		string? env_url = GLib.Environment.get_variable ("FERIDA_SCRIPT_URL");
++		string? env_key = GLib.Environment.get_variable ("FERIDA_SCRIPT_KEY");
 +		string? conf_url = null;
 +		string? conf_key = null;
 +
@@ -305,7 +305,7 @@ index 230284c7..35d3fa81 100644
  		unowned string? gadget_path = location.path;
  		if (gadget_path == null)
 diff --git a/lib/gadget/meson.build b/lib/gadget/meson.build
-index 8fb4c6c8..c1261409 100644
+index 8fb4c6c8..9e03c600 100644
 --- a/lib/gadget/meson.build
 +++ b/lib/gadget/meson.build
 @@ -57,7 +57,7 @@ endif
@@ -313,7 +313,7 @@ index 8fb4c6c8..c1261409 100644
  raw_gadget = shared_library('frida-gadget-raw', gadget_sources,
    name_prefix: 'lib',
 -  vala_args: [base_vala_args, payload_vala_args, extra_vala_args],
-+  vala_args: [base_vala_args, payload_vala_args, tls_provider_vala_args, extra_vala_args],
++  vala_args: [base_vala_args, payload_vala_args, '--pkg=openssl', tls_provider_vala_args, extra_vala_args],
    vala_header: 'frida-gadget.h',
    c_args: frida_component_cflags,
    objc_args: extra_objc_args,
