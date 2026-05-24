@@ -158,9 +158,22 @@ jobs:
           exit 1
         fi
 
+        OMVLL_CONFIG=$(find "$GITHUB_WORKSPACE/omvll" -type f -name 'sample-omvll-config.py' | head -n 1)
+        OMVLL_PYTHONPATH=$(find "$GITHUB_WORKSPACE/omvll" -type d -path '*/Python-3.10.7/Lib' | head -n 1)
+        if [ -z "$OMVLL_CONFIG" ] || [ -z "$OMVLL_PYTHONPATH" ]; then
+          echo "O-MVLL Python config/runtime not found"
+          find "$GITHUB_WORKSPACE/omvll" -maxdepth 4 -type f -o -type d
+          exit 1
+        fi
+
         echo "OMVLL_PLUGIN=$OMVLL_PLUGIN" >> "$GITHUB_ENV"
+        echo "OMVLL_CONFIG=$OMVLL_CONFIG" >> "$GITHUB_ENV"
+        echo "OMVLL_PYTHONPATH=$OMVLL_PYTHONPATH" >> "$GITHUB_ENV"
+        echo "PYTHONHOME=" >> "$GITHUB_ENV"
         echo "OMVLL_FLAGS=" >> "$GITHUB_ENV"
         echo "Using O-MVLL plugin: $OMVLL_PLUGIN"
+        echo "Using O-MVLL config: $OMVLL_CONFIG"
+        echo "Using O-MVLL Python path: $OMVLL_PYTHONPATH"
 
     - name: build frida for Android
       shell: bash
