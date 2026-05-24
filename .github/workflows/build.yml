@@ -163,6 +163,7 @@ jobs:
         echo "OMVLL_PLUGIN=$OMVLL_PLUGIN" >> "$GITHUB_ENV"
         echo "OMVLL_CONFIG=$OMVLL_CONFIG" >> "$GITHUB_ENV"
         echo "OMVLL_PYTHONPATH=$OMVLL_PYTHONPATH" >> "$GITHUB_ENV"
+        echo "LD_LIBRARY_PATH=$GITHUB_WORKSPACE/o-mvll-dist${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
         echo "PYTHONHOME=" >> "$GITHUB_ENV"
         echo "OMVLL_FLAGS=" >> "$GITHUB_ENV"
         echo "Using O-MVLL plugin: $OMVLL_PLUGIN"
