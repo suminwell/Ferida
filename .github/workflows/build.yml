@@ -156,7 +156,7 @@ jobs:
         tar xzf "$GITHUB_WORKSPACE"/o-mvll-dist/omvll_v*_linux.tar.gz \
           --directory="$GITHUB_WORKSPACE/o-mvll-dist"
 
-        OMVLL_PLUGIN="$GITHUB_WORKSPACE/o-mvll-dist/omvll-ndk-r29.so"
+        OMVLL_PLUGIN=""
         OMVLL_CONFIG="$GITHUB_WORKSPACE/o-mvll-dist/sample-omvll-config.py"
         OMVLL_PYTHONPATH="$GITHUB_WORKSPACE/o-mvll-dist/Python-3.10.7/Lib"
 
@@ -198,11 +198,7 @@ jobs:
         do
           mkdir build-$ARCH
           cd build-$ARCH
-          if [ "$ARCH" = "android-arm" ]; then
-            OMVLL_PLUGIN= ../frida/configure --host=$ARCH
-          else
-            ../frida/configure --host=$ARCH
-          fi
+          ../frida/configure --host=$ARCH
           make
           cd ..
         done
