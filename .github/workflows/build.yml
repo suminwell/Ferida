@@ -143,7 +143,6 @@ jobs:
         python3 -m pip install lief graphlib
 
     - name: Setup O-MVLL
-      if: ${{ vars.ENABLE_OMVLL == '1' }}
       shell: bash
       run: |
         set -euo pipefail
@@ -164,7 +163,7 @@ jobs:
         echo "OMVLL_CONFIG=$OMVLL_CONFIG" >> "$GITHUB_ENV"
         echo "OMVLL_PYTHONPATH=$OMVLL_PYTHONPATH" >> "$GITHUB_ENV"
         echo "PYTHONHOME=" >> "$GITHUB_ENV"
-        echo "OMVLL_FLAGS=${{ vars.OMVLL_FLAGS }}" >> "$GITHUB_ENV"
+        echo "OMVLL_FLAGS=" >> "$GITHUB_ENV"
         echo "Using O-MVLL plugin: $OMVLL_PLUGIN"
         echo "Using O-MVLL config: $OMVLL_CONFIG"
         echo "Using O-MVLL Python path: $OMVLL_PYTHONPATH"
