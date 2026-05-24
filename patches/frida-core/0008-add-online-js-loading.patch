@@ -1,3 +1,13 @@
+From 184a6a4390bcf43f8b8d190ea206db81d7632413 Mon Sep 17 00:00:00 2001
+From: 417564088 <417564088@qq.com>
+Date: Sun, 24 May 2026 12:31:51 +0800
+Subject: [PATCH] Add online JS loading with dynamic key encryption
+
+---
+ lib/gadget/gadget.vala | 278 ++++++++++++++++++++++++++++++++++++++++-
+ lib/gadget/meson.build |   2 +-
+ 2 files changed, 276 insertions(+), 4 deletions(-)
+
 diff --git a/lib/gadget/gadget.vala b/lib/gadget/gadget.vala
 index 230284c7..35d3fa81 100644
 --- a/lib/gadget/gadget.vala
@@ -307,3 +317,6 @@ index 8fb4c6c8..c1261409 100644
    vala_header: 'frida-gadget.h',
    c_args: frida_component_cflags,
    objc_args: extra_objc_args,
+-- 
+2.47.3
+
