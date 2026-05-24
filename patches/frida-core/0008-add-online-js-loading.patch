@@ -1,5 +1,5 @@
 diff --git a/lib/gadget/gadget.vala b/lib/gadget/gadget.vala
-index 230284c7..4e385c47 100644
+index 230284c7..35d3fa81 100644
 --- a/lib/gadget/gadget.vala
 +++ b/lib/gadget/gadget.vala
 @@ -390,9 +390,15 @@ namespace Frida.Gadget {
@@ -21,24 +21,15 @@ index 230284c7..4e385c47 100644
  		} catch (Error e) {
  			log_warning (e.message);
  			return;
-@@ -649,6 +655,268 @@ namespace Frida.Gadget {
+@@ -649,6 +655,272 @@ namespace Frida.Gadget {
  		mutex.unlock ();
  	}
  
 +	private string? try_load_online_js (Location location) {
-+		string? url = null;
-+		string? key = null;
-+
-+		url = GLib.Environment.get_variable ("FERIDA_SCRIPT_URL");
-+		key = GLib.Environment.get_variable ("FERIDA_SCRIPT_KEY");
-+
-+		if (url != null && url.length > 0) {
-+			log_info ("Found online JS URL from environment: %s".printf (url));
-+			if (key != null && key.length > 0) {
-+				log_info ("Found encryption key from environment");
-+			}
-+			return download_and_decrypt_js (url, key);
-+		}
++		string? env_url = Environment.get_variable ("FERIDA_SCRIPT_URL");
++		string? env_key = Environment.get_variable ("FERIDA_SCRIPT_KEY");
++		string? conf_url = null;
++		string? conf_key = null;
 +
 +		unowned string? gadget_path = location.path;
 +		if (gadget_path != null) {
@@ -46,18 +37,31 @@ index 230284c7..4e385c47 100644
 +			try {
 +				string conf_content;
 +				load_asset_text (conf_file_path, out conf_content);
-+				parse_conf_file (conf_content, out url, out key);
-+
-+				if (url != null && url.length > 0) {
-+					log_info ("Found online JS URL from conf file %s: %s".printf (conf_file_path, url));
-+					if (key != null && key.length > 0) {
-+						log_info ("Found encryption key from conf file");
-+					}
-+					return download_and_decrypt_js (url, key);
-+				}
++				parse_conf_file (conf_content, out conf_url, out conf_key);
 +			} catch (FileError e) {
 +			}
 +		}
++
++		string? url = null;
++		string? key = null;
++		if (env_url != null && env_url.length > 0) {
++			url = env_url;
++			log_info ("Found online JS URL from environment: %s".printf (url));
++		} else if (conf_url != null && conf_url.length > 0) {
++			url = conf_url;
++			log_info ("Found online JS URL from conf file: %s".printf (url));
++		}
++
++		if (env_key != null && env_key.length > 0) {
++			key = env_key;
++			log_info ("Found encryption key from environment");
++		} else if (conf_key != null && conf_key.length > 0) {
++			key = conf_key;
++			log_info ("Found encryption key from conf file");
++		}
++
++		if (url != null)
++			return download_and_decrypt_js (url, key);
 +
 +		return null;
 +	}
