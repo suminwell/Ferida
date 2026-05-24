@@ -1,0 +1,42 @@
+From 93b9329bd011fada00e6de2354a068097b6cfe6e Mon Sep 17 00:00:00 2001
+From: 417564088 <417564088@qq.com>
+Date: Sun, 24 May 2026 13:54:31 +0800
+Subject: [PATCH] Add optional O-MVLL support for gadget
+
+---
+ lib/gadget/meson.build | 15 ++++++++++++++-
+ 1 file changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/lib/gadget/meson.build b/lib/gadget/meson.build
+index 9e03c600..9fbacf70 100644
+--- a/lib/gadget/meson.build
++++ b/lib/gadget/meson.build
+@@ -55,11 +55,24 @@ if host_os_family in ['linux', 'qnx']
+   extra_link_args += ['-Wl,-Bsymbolic']
+ endif
+ 
++gadget_omvll_c_args = []
++if host_os == 'android'
++  omvll_plugin = run_command('sh', '-c', 'printf %s "$OMVLL_PLUGIN"', check: false).stdout().strip()
++  if omvll_plugin != ''
++    gadget_omvll_c_args += ['-fpass-plugin=' + omvll_plugin]
++
++    omvll_flags = run_command('sh', '-c', 'printf %s "$OMVLL_FLAGS"', check: false).stdout().strip()
++    if omvll_flags != ''
++      gadget_omvll_c_args += omvll_flags.split(' ')
++    endif
++  endif
++endif
++
+ raw_gadget = shared_library('frida-gadget-raw', gadget_sources,
+   name_prefix: 'lib',
+   vala_args: [base_vala_args, payload_vala_args, '--pkg=openssl', tls_provider_vala_args, extra_vala_args],
+   vala_header: 'frida-gadget.h',
+-  c_args: frida_component_cflags,
++  c_args: frida_component_cflags + gadget_omvll_c_args,
+   objc_args: extra_objc_args,
+   link_args: extra_link_args,
+   link_depends: extra_link_depends,
+-- 
+2.47.3
+

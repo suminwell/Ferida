@@ -127,7 +127,7 @@ jobs:
       id: setup-ndk
       uses: nttld/setup-ndk@v1
       with:
-        ndk-version: r29
+        ndk-version: r26d
         local-cache: false
         link-to-sdk: true
 
@@ -141,6 +141,26 @@ jobs:
         sudo apt-get update && DEBIAN_FRONTEND=noninteractive sudo apt-get install build-essential tree ninja-build gcc-multilib g++-multilib lib32stdc++-9-dev flex bison ruby ruby-dev python3-requests python3-setuptools python3-dev python3-pip libc6-dev libc6-dev-i386 -y
         sudo gem install fpm -v 1.11.0 --no-document
         python3 -m pip install lief graphlib
+
+    - name: Setup O-MVLL
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        curl -L "https://github.com/open-obfuscator/o-mvll/releases/download/1.6.0/omvll_v1-6-0_linux_2026-04-23T13_47_22.tar.gz" -o /tmp/omvll.tar.gz
+        mkdir -p "$GITHUB_WORKSPACE/omvll"
+        tar -xzf /tmp/omvll.tar.gz -C "$GITHUB_WORKSPACE/omvll"
+
+        OMVLL_PLUGIN=$(find "$GITHUB_WORKSPACE/omvll" -type f -name '*.so' | head -n 1)
+        if [ -z "$OMVLL_PLUGIN" ]; then
+          echo "O-MVLL plugin not found"
+          find "$GITHUB_WORKSPACE/omvll" -maxdepth 4 -type f
+          exit 1
+        fi
+
+        echo "OMVLL_PLUGIN=$OMVLL_PLUGIN" >> "$GITHUB_ENV"
+        echo "OMVLL_FLAGS=" >> "$GITHUB_ENV"
+        echo "Using O-MVLL plugin: $OMVLL_PLUGIN"
 
     - name: build frida for Android
       shell: bash
