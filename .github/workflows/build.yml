@@ -143,34 +143,28 @@ jobs:
         python3 -m pip install lief graphlib
 
     - name: Setup O-MVLL
+      if: ${{ vars.ENABLE_OMVLL == '1' }}
       shell: bash
       run: |
         set -euo pipefail
 
-        curl -L "https://github.com/open-obfuscator/o-mvll/releases/download/1.6.0/omvll_v1-6-0_linux_2026-04-23T13_47_22.tar.gz" -o /tmp/omvll.tar.gz
-        mkdir -p "$GITHUB_WORKSPACE/omvll"
-        tar -xzf /tmp/omvll.tar.gz -C "$GITHUB_WORKSPACE/omvll"
+        mkdir -p "$GITHUB_WORKSPACE/o-mvll-dist"
+        GH_TOKEN="${{ github.token }}" gh release download \
+          --repo suminwell/o-mvll \
+          --pattern 'omvll_v*_linux.tar.gz' \
+          --dir "$GITHUB_WORKSPACE/o-mvll-dist"
+        tar xzf "$GITHUB_WORKSPACE"/o-mvll-dist/omvll_v*_linux.tar.gz \
+          --directory="$GITHUB_WORKSPACE/o-mvll-dist"
 
-        OMVLL_PLUGIN=$(find "$GITHUB_WORKSPACE/omvll" -type f -name '*.so' | head -n 1)
-        if [ -z "$OMVLL_PLUGIN" ]; then
-          echo "O-MVLL plugin not found"
-          find "$GITHUB_WORKSPACE/omvll" -maxdepth 4 -type f
-          exit 1
-        fi
-
-        OMVLL_CONFIG=$(find "$GITHUB_WORKSPACE/omvll" -type f -name 'sample-omvll-config.py' | head -n 1)
-        OMVLL_PYTHONPATH=$(find "$GITHUB_WORKSPACE/omvll" -type d -path '*/Python-3.10.7/Lib' | head -n 1)
-        if [ -z "$OMVLL_CONFIG" ] || [ -z "$OMVLL_PYTHONPATH" ]; then
-          echo "O-MVLL Python config/runtime not found"
-          find "$GITHUB_WORKSPACE/omvll" -maxdepth 4 -type f -o -type d
-          exit 1
-        fi
+        OMVLL_PLUGIN="$GITHUB_WORKSPACE/o-mvll-dist/omvll-ndk-r29.so"
+        OMVLL_CONFIG="$GITHUB_WORKSPACE/o-mvll-dist/sample-omvll-config.py"
+        OMVLL_PYTHONPATH="$GITHUB_WORKSPACE/o-mvll-dist/Python-3.10.7/Lib"
 
         echo "OMVLL_PLUGIN=$OMVLL_PLUGIN" >> "$GITHUB_ENV"
         echo "OMVLL_CONFIG=$OMVLL_CONFIG" >> "$GITHUB_ENV"
         echo "OMVLL_PYTHONPATH=$OMVLL_PYTHONPATH" >> "$GITHUB_ENV"
         echo "PYTHONHOME=" >> "$GITHUB_ENV"
-        echo "OMVLL_FLAGS=" >> "$GITHUB_ENV"
+        echo "OMVLL_FLAGS=${{ vars.OMVLL_FLAGS }}" >> "$GITHUB_ENV"
         echo "Using O-MVLL plugin: $OMVLL_PLUGIN"
         echo "Using O-MVLL config: $OMVLL_CONFIG"
         echo "Using O-MVLL Python path: $OMVLL_PYTHONPATH"
