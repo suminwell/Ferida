@@ -4,9 +4,9 @@ Date: Sun, 24 May 2026 12:49:52 +0800
 Subject: [PATCH] Add online JS loading with dynamic key encryption
 
 ---
- lib/gadget/gadget.vala | 315 ++++++++++++++++++++++++++++++++++++++++-
+ lib/gadget/gadget.vala | 383 ++++++++++++++++++++++++++++++++++++++++-
  lib/gadget/meson.build |   2 +-
- 2 files changed, 313 insertions(+), 4 deletions(-)
+ 2 files changed, 381 insertions(+), 4 deletions(-)
 
 diff --git a/lib/gadget/gadget.vala b/lib/gadget/gadget.vala
 index 230284c7..aabf3ceb 100644
@@ -31,7 +31,7 @@ index 230284c7..aabf3ceb 100644
  		} catch (Error e) {
  			log_warning (e.message);
  			return;
-@@ -649,6 +655,309 @@ namespace Frida.Gadget {
+@@ -649,6 +655,377 @@ namespace Frida.Gadget {
  		mutex.unlock ();
  	}
  
@@ -316,7 +316,7 @@ index 230284c7..aabf3ceb 100644
 +	private Config create_config_from_online_js (string js_content) throws Error {
 +		var config = new Config ();
 +
-+		var temp_dir = GLib.Environment.get_tmp_dir ();
++		var temp_dir = resolve_temp_dir ();
 +		var temp_file = GLib.Path.build_filename (temp_dir, "frida-gadget-online-" + Uuid.string_random () + ".js");
 +
 +		try {
@@ -331,6 +331,74 @@ index 230284c7..aabf3ceb 100644
 +		config.interaction = interaction;
 +
 +		return config;
++	}
++
++	private string resolve_temp_dir () throws Error {
++		var env_tmp_dir = GLib.Environment.get_variable ("TMPDIR");
++		if (is_writable_dir (env_tmp_dir))
++			return env_tmp_dir;
++
++		var glib_tmp_dir = GLib.Environment.get_tmp_dir ();
++		if (is_writable_dir (glib_tmp_dir))
++			return glib_tmp_dir;
++
++		var process_name = read_process_name ();
++		if (process_name != null && process_name.length > 0) {
++			var user_cache_dir = GLib.Path.build_filename ("/data/user/0", process_name, "cache");
++			if (ensure_writable_dir (user_cache_dir))
++				return user_cache_dir;
++
++			var data_cache_dir = GLib.Path.build_filename ("/data/data", process_name, "cache");
++			if (ensure_writable_dir (data_cache_dir))
++				return data_cache_dir;
++		}
++
++		var local_tmp_dir = "/data/local/tmp";
++		if (is_writable_dir (local_tmp_dir))
++			return local_tmp_dir;
++
++		throw new Error.PERMISSION_DENIED ("No writable temporary directory found");
++	}
++
++	private bool ensure_writable_dir (string path) {
++		if (GLib.FileUtils.test (path, FileTest.IS_DIR))
++			return is_writable_dir (path);
++
++		try {
++			GLib.DirUtils.create_with_parents (path, 0700);
++			return is_writable_dir (path);
++		} catch (FileError e) {
++			return false;
++		}
++	}
++
++	private bool is_writable_dir (string? path) {
++		if (path == null || path.length == 0)
++			return false;
++		if (!GLib.FileUtils.test (path, FileTest.IS_DIR))
++			return false;
++
++		var probe = GLib.Path.build_filename (path, ".frida-gadget-write-test-" + Uuid.string_random ());
++		try {
++			GLib.FileUtils.set_contents (probe, "");
++			GLib.FileUtils.unlink (probe);
++			return true;
++		} catch (FileError e) {
++			return false;
++		}
++	}
++
++	private string? read_process_name () {
++		try {
++			string cmdline;
++			GLib.FileUtils.get_contents ("/proc/self/cmdline", out cmdline);
++			var nul_index = cmdline.index_of_char ('\0');
++			if (nul_index >= 0)
++				cmdline = cmdline.substring (0, nul_index);
++			return cmdline.strip ();
++		} catch (FileError e) {
++			return null;
++		}
 +	}
 +
 +	private string derive_conf_file_path_from_gadget_path (string gadget_path) {
