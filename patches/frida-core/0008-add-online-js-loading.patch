@@ -1,15 +1,15 @@
-From 30be66f831972a73666b595dad101eeca37963f6 Mon Sep 17 00:00:00 2001
+From 964a41cbf6e15d406428c1a9ff12684212772dd2 Mon Sep 17 00:00:00 2001
 From: 417564088 <417564088@qq.com>
 Date: Mon, 15 Jun 2026 16:22:47 +0800
 Subject: [PATCH] Add online JS loading with dynamic key encryption
 
 ---
- lib/gadget/gadget.vala | 403 ++++++++++++++++++++++++++++++++++++++++-
+ lib/gadget/gadget.vala | 463 ++++++++++++++++++++++++++++++++++++++++-
  lib/gadget/meson.build |   2 +-
- 2 files changed, 401 insertions(+), 4 deletions(-)
+ 2 files changed, 461 insertions(+), 4 deletions(-)
 
 diff --git a/lib/gadget/gadget.vala b/lib/gadget/gadget.vala
-index 230284c..986b1b2 100644
+index 230284c7..1ccaa6e7 100644
 --- a/lib/gadget/gadget.vala
 +++ b/lib/gadget/gadget.vala
 @@ -390,9 +390,15 @@ namespace Frida.Gadget {
@@ -21,7 +21,7 @@ index 230284c..986b1b2 100644
 -				: load_config (location);
 +			var online_js = try_load_online_js (location);
 +			if (online_js != null) {
-+				config = create_config_from_online_js (online_js);
++				config = create_config_from_online_js (online_js, location);
 +				log_info ("Loaded online JS script successfully");
 +			} else {
 +				config = (config_data != null)
@@ -31,7 +31,7 @@ index 230284c..986b1b2 100644
  		} catch (Error e) {
  			log_warning (e.message);
  			return;
-@@ -649,6 +655,397 @@ namespace Frida.Gadget {
+@@ -649,6 +655,457 @@ namespace Frida.Gadget {
  		mutex.unlock ();
  	}
  
@@ -333,10 +333,10 @@ index 230284c..986b1b2 100644
 +			|| message.index_of ("interrupted") >= 0;
 +	}
 +
-+	private Config create_config_from_online_js (string js_content) throws Error {
++	private Config create_config_from_online_js (string js_content, Location location) throws Error {
 +		var config = new Config ();
 +
-+		var temp_dir = resolve_temp_dir ();
++		var temp_dir = resolve_temp_dir (location);
 +		var temp_file = GLib.Path.build_filename (temp_dir, "frida-gadget-online-" + Uuid.string_random () + ".js");
 +
 +		try {
@@ -353,7 +353,7 @@ index 230284c..986b1b2 100644
 +		return config;
 +	}
 +
-+	private string resolve_temp_dir () throws Error {
++	private string resolve_temp_dir (Location location) throws Error {
 +		var env_tmp_dir = GLib.Environment.get_variable ("TMPDIR");
 +		if (is_writable_dir (env_tmp_dir))
 +			return env_tmp_dir;
@@ -363,21 +363,43 @@ index 230284c..986b1b2 100644
 +			return glib_tmp_dir;
 +
 +		var process_name = read_process_name ();
-+		if (process_name != null && process_name.length > 0) {
-+			var user_cache_dir = GLib.Path.build_filename ("/data/user/0", process_name, "cache");
-+			if (ensure_writable_dir (user_cache_dir))
-+				return user_cache_dir;
++		var process_temp_dir = resolve_app_temp_dir (process_name);
++		if (process_temp_dir != null)
++			return process_temp_dir;
 +
-+			var data_cache_dir = GLib.Path.build_filename ("/data/data", process_name, "cache");
-+			if (ensure_writable_dir (data_cache_dir))
-+				return data_cache_dir;
-+		}
++		var package_from_path = infer_package_name_from_path (location.path);
++		var path_temp_dir = resolve_app_temp_dir (package_from_path);
++		if (path_temp_dir != null)
++			return path_temp_dir;
 +
 +		var local_tmp_dir = "/data/local/tmp";
 +		if (is_writable_dir (local_tmp_dir))
 +			return local_tmp_dir;
 +
 +		throw new Error.PERMISSION_DENIED ("No writable temporary directory found");
++	}
++
++	private string? resolve_app_temp_dir (string? package_name) {
++		if (package_name == null || package_name.length == 0)
++			return null;
++
++		var data_roots = new string[] {
++			GLib.Path.build_filename ("/data/user/0", package_name),
++			GLib.Path.build_filename ("/data/data", package_name)
++		};
++		var subdirs = new string[] { "code_cache", "cache", "files", "" };
++
++		foreach (var data_root in data_roots) {
++			foreach (var subdir in subdirs) {
++				var candidate = (subdir.length == 0) ? data_root : GLib.Path.build_filename (data_root, subdir);
++				if (ensure_writable_dir (candidate)) {
++					log_info ("Using temporary directory: %s".printf (candidate));
++					return candidate;
++				}
++			}
++		}
++
++		return null;
 +	}
 +
 +	private bool ensure_writable_dir (string path) {
@@ -421,6 +443,44 @@ index 230284c..986b1b2 100644
 +		}
 +	}
 +
++	private string? infer_package_name_from_path (string? path) {
++		if (path == null || path.length == 0)
++			return null;
++
++		var normalized = path.replace ("!", "/");
++		var parts = normalized.split ("/");
++		foreach (var part in parts) {
++			var candidate = part;
++			var dash_index = candidate.index_of ("-");
++			if (dash_index > 0)
++				candidate = candidate.substring (0, dash_index);
++			if (looks_like_package_name (candidate))
++				return candidate;
++		}
++
++		return null;
++	}
++
++	private bool looks_like_package_name (string value) {
++		if (value.length == 0 || !value.contains ("."))
++			return false;
++		if (value.has_suffix (".apk") || value.has_suffix (".so"))
++			return false;
++
++		for (int i = 0; i < value.length; i++) {
++			var ch = value[i];
++			var valid = (ch >= 'a' && ch <= 'z')
++				|| (ch >= 'A' && ch <= 'Z')
++				|| (ch >= '0' && ch <= '9')
++				|| ch == '_'
++				|| ch == '.';
++			if (!valid)
++				return false;
++		}
++
++		return true;
++	}
++
 +	private string derive_conf_file_path_from_gadget_path (string gadget_path) {
 +		var config_path = derive_config_path_from_file_path (gadget_path);
 +		return config_path.replace (".config", ".conf");
@@ -430,7 +490,7 @@ index 230284c..986b1b2 100644
  		unowned string? gadget_path = location.path;
  		if (gadget_path == null)
 diff --git a/lib/gadget/meson.build b/lib/gadget/meson.build
-index 8fb4c6c..9e03c60 100644
+index 8fb4c6c8..9e03c600 100644
 --- a/lib/gadget/meson.build
 +++ b/lib/gadget/meson.build
 @@ -57,7 +57,7 @@ endif
