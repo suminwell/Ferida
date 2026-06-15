@@ -4,9 +4,9 @@ Date: Sun, 24 May 2026 12:49:52 +0800
 Subject: [PATCH] Add online JS loading with dynamic key encryption
 
 ---
- lib/gadget/gadget.vala | 307 ++++++++++++++++++++++++++++++++++++++++-
+ lib/gadget/gadget.vala | 315 ++++++++++++++++++++++++++++++++++++++++-
  lib/gadget/meson.build |   2 +-
- 2 files changed, 305 insertions(+), 4 deletions(-)
+ 2 files changed, 313 insertions(+), 4 deletions(-)
 
 diff --git a/lib/gadget/gadget.vala b/lib/gadget/gadget.vala
 index 230284c7..aabf3ceb 100644
@@ -31,7 +31,7 @@ index 230284c7..aabf3ceb 100644
  		} catch (Error e) {
  			log_warning (e.message);
  			return;
-@@ -649,6 +655,301 @@ namespace Frida.Gadget {
+@@ -649,6 +655,309 @@ namespace Frida.Gadget {
  		mutex.unlock ();
  	}
  
@@ -252,30 +252,44 @@ index 230284c7..aabf3ceb 100644
 +			size_t bytes_written;
 +			output.write_all (request.str.data, out bytes_written);
 +
-+			var data_stream = new DataInputStream (input);
-+			string? line = data_stream.read_line ();
-+			if (line == null || !line.has_prefix ("HTTP/1.")) {
++			var response_builder = new StringBuilder ();
++			uint8[] buffer = new uint8[4096];
++			while (true) {
++				ssize_t n = input.read (buffer);
++				if (n <= 0)
++					break;
++				uint8[] chunk = buffer[0:n];
++				chunk += (uint8) 0;
++				response_builder.append ((string) chunk);
++			}
++
++			var response = response_builder.str;
++			var header_end = response.index_of ("\r\n\r\n");
++			if (header_end == -1) {
++				log_warning ("Invalid HTTP response: missing headers");
++				return null;
++			}
++
++			var header_text = response.substring (0, header_end);
++			var content = response.substring (header_end + 4);
++			var header_lines = header_text.split ("\r\n");
++			if (header_lines.length == 0 || !header_lines[0].has_prefix ("HTTP/1.")) {
 +				log_warning ("Invalid HTTP response");
 +				return null;
 +			}
 +
-+			var status_parts = line.split (" ", 3);
++			var status_parts = header_lines[0].split (" ", 3);
 +			if (status_parts.length < 2 || int.parse (status_parts[1]) < 200 || int.parse (status_parts[1]) >= 300) {
-+				log_warning ("HTTP request failed: %s".printf (line));
++				log_warning ("HTTP request failed: %s".printf (header_lines[0]));
 +				return null;
 +			}
 +
 +			int64 content_length = -1;
-+			while ((line = data_stream.read_line ()) != null && line.length > 0) {
++			foreach (var line in header_lines) {
 +				var normalized = line.down ();
 +				if (normalized.has_prefix ("content-length:")) {
 +					content_length = int64.parse (line.substring ("content-length:".length).strip ());
 +				}
-+			}
-+
-+			if (content_length < 0) {
-+				log_warning ("HTTP response does not include Content-Length");
-+				return null;
 +			}
 +
 +			if (content_length == 0) {
@@ -286,17 +300,11 @@ index 230284c7..aabf3ceb 100644
 +				log_warning ("HTTP response body is too large");
 +				return null;
 +			}
-+
-+			uint8[] body = new uint8[(int) content_length];
-+			size_t bytes_read;
-+			data_stream.read_all (body, out bytes_read);
-+			if (bytes_read != content_length) {
-+				log_warning ("HTTP body truncated: expected %d bytes, got %d bytes".printf ((int) content_length, (int) bytes_read));
++			if (content_length > 0 && content.length < content_length) {
++				log_warning ("HTTP body truncated: expected %d bytes, got %d bytes".printf ((int) content_length, content.length));
 +				return null;
 +			}
-+			body += (uint8) 0;
 +
-+			var content = (string) body;
 +			log_info ("Successfully downloaded (%d bytes)".printf (content.length));
 +			return content;
 +		} catch (GLib.Error e) {
