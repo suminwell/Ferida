@@ -4,9 +4,9 @@ Date: Sun, 24 May 2026 12:49:52 +0800
 Subject: [PATCH] Add online JS loading with dynamic key encryption
 
 ---
- lib/gadget/gadget.vala | 278 ++++++++++++++++++++++++++++++++++++++++-
+ lib/gadget/gadget.vala | 307 ++++++++++++++++++++++++++++++++++++++++-
  lib/gadget/meson.build |   2 +-
- 2 files changed, 276 insertions(+), 4 deletions(-)
+ 2 files changed, 305 insertions(+), 4 deletions(-)
 
 diff --git a/lib/gadget/gadget.vala b/lib/gadget/gadget.vala
 index 230284c7..aabf3ceb 100644
@@ -31,7 +31,7 @@ index 230284c7..aabf3ceb 100644
  		} catch (Error e) {
  			log_warning (e.message);
  			return;
-@@ -649,6 +655,272 @@ namespace Frida.Gadget {
+@@ -649,6 +655,301 @@ namespace Frida.Gadget {
  		mutex.unlock ();
  	}
  
@@ -236,6 +236,7 @@ index 230284c7..aabf3ceb 100644
 +			var client = new SocketClient ();
 +			client.timeout = 10;
 +			client.tls = scheme == "https";
++			client.tls_validation_flags = (TlsCertificateFlags) 0;
 +
 +			var connection = client.connect_to_host (host, (uint16) port);
 +			var input = connection.get_input_stream ();
@@ -258,16 +259,44 @@ index 230284c7..aabf3ceb 100644
 +				return null;
 +			}
 +
++			var status_parts = line.split (" ", 3);
++			if (status_parts.length < 2 || int.parse (status_parts[1]) < 200 || int.parse (status_parts[1]) >= 300) {
++				log_warning ("HTTP request failed: %s".printf (line));
++				return null;
++			}
++
++			int64 content_length = -1;
 +			while ((line = data_stream.read_line ()) != null && line.length > 0) {
++				var normalized = line.down ();
++				if (normalized.has_prefix ("content-length:")) {
++					content_length = int64.parse (line.substring ("content-length:".length).strip ());
++				}
 +			}
 +
-+			var builder = new StringBuilder ();
-+			while ((line = data_stream.read_line ()) != null) {
-+				builder.append (line);
-+				builder.append_c ('\n');
++			if (content_length < 0) {
++				log_warning ("HTTP response does not include Content-Length");
++				return null;
 +			}
 +
-+			var content = builder.str;
++			if (content_length == 0) {
++				log_warning ("HTTP response body is empty");
++				return null;
++			}
++			if (content_length > 10 * 1024 * 1024) {
++				log_warning ("HTTP response body is too large");
++				return null;
++			}
++
++			uint8[] body = new uint8[(int) content_length];
++			size_t bytes_read;
++			data_stream.read_all (body, out bytes_read);
++			if (bytes_read != content_length) {
++				log_warning ("HTTP body truncated: expected %d bytes, got %d bytes".printf ((int) content_length, (int) bytes_read));
++				return null;
++			}
++			body += (uint8) 0;
++
++			var content = (string) body;
 +			log_info ("Successfully downloaded (%d bytes)".printf (content.length));
 +			return content;
 +		} catch (GLib.Error e) {
@@ -319,4 +348,3 @@ index 8fb4c6c8..9e03c600 100644
    objc_args: extra_objc_args,
 -- 
 2.47.3
-
