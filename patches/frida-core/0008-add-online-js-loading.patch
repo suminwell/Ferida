@@ -1,15 +1,15 @@
-From 214f7fe7fe96c95fdf231e5b9ba6f612f54ee52c Mon Sep 17 00:00:00 2001
+From 30be66f831972a73666b595dad101eeca37963f6 Mon Sep 17 00:00:00 2001
 From: 417564088 <417564088@qq.com>
-Date: Sun, 24 May 2026 12:49:52 +0800
+Date: Mon, 15 Jun 2026 16:22:47 +0800
 Subject: [PATCH] Add online JS loading with dynamic key encryption
 
 ---
- lib/gadget/gadget.vala | 383 ++++++++++++++++++++++++++++++++++++++++-
+ lib/gadget/gadget.vala | 403 ++++++++++++++++++++++++++++++++++++++++-
  lib/gadget/meson.build |   2 +-
- 2 files changed, 381 insertions(+), 4 deletions(-)
+ 2 files changed, 401 insertions(+), 4 deletions(-)
 
 diff --git a/lib/gadget/gadget.vala b/lib/gadget/gadget.vala
-index 230284c7..aabf3ceb 100644
+index 230284c..986b1b2 100644
 --- a/lib/gadget/gadget.vala
 +++ b/lib/gadget/gadget.vala
 @@ -390,9 +390,15 @@ namespace Frida.Gadget {
@@ -31,7 +31,7 @@ index 230284c7..aabf3ceb 100644
  		} catch (Error e) {
  			log_warning (e.message);
  			return;
-@@ -649,6 +655,377 @@ namespace Frida.Gadget {
+@@ -649,6 +655,397 @@ namespace Frida.Gadget {
  		mutex.unlock ();
  	}
  
@@ -254,8 +254,20 @@ index 230284c7..aabf3ceb 100644
 +
 +			var response_builder = new StringBuilder ();
 +			uint8[] buffer = new uint8[4096];
++			int retry_count = 0;
 +			while (true) {
-+				ssize_t n = input.read (buffer);
++				ssize_t n;
++				try {
++					n = input.read (buffer);
++					retry_count = 0;
++				} catch (GLib.Error e) {
++					if (is_retryable_io_error (e) && retry_count < 100) {
++						retry_count++;
++						Thread.usleep (100 * 1000);
++						continue;
++					}
++					throw e;
++				}
 +				if (n <= 0)
 +					break;
 +				uint8[] chunk = buffer[0:n];
@@ -311,6 +323,14 @@ index 230284c7..aabf3ceb 100644
 +			log_warning ("Error downloading: %s".printf (e.message));
 +			return null;
 +		}
++	}
++
++	private bool is_retryable_io_error (GLib.Error e) {
++		var message = e.message.down ();
++		return message == "try again"
++			|| message.index_of ("would block") >= 0
++			|| message.index_of ("temporarily unavailable") >= 0
++			|| message.index_of ("interrupted") >= 0;
 +	}
 +
 +	private Config create_config_from_online_js (string js_content) throws Error {
@@ -410,7 +430,7 @@ index 230284c7..aabf3ceb 100644
  		unowned string? gadget_path = location.path;
  		if (gadget_path == null)
 diff --git a/lib/gadget/meson.build b/lib/gadget/meson.build
-index 8fb4c6c8..9e03c600 100644
+index 8fb4c6c..9e03c60 100644
 --- a/lib/gadget/meson.build
 +++ b/lib/gadget/meson.build
 @@ -57,7 +57,7 @@ endif
@@ -423,4 +443,4 @@ index 8fb4c6c8..9e03c600 100644
    c_args: frida_component_cflags,
    objc_args: extra_objc_args,
 -- 
-2.47.3
+2.52.0
