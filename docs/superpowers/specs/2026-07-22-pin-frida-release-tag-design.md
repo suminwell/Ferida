@@ -1,44 +1,42 @@
-# Pin Ferida Builds to the Frida Release Tag
+# 将 Ferida 构建固定到 Frida Release Tag
 
-## Goal
+## 目标
 
-Ensure each Ferida GitHub Release is built from the exact Frida tag used as
-its version, instead of from Frida's default branch at workflow runtime.
+确保每个 Ferida GitHub Release 都使用其版本号对应的 Frida tag 源码构建，
+而不是在工作流运行时直接使用 Frida 默认分支的最新源码。
 
-## Scope
+## 修改范围
 
-Only `ferida/.github/workflows/build.yml` will change. The `android-core`
-workflow and its intentionally independent release lifecycle remain unchanged.
+只修改 `ferida/.github/workflows/build.yml`。`android-core` 的工作流及其独立的
+发布周期保持不变，Ferida 发布成功后不会自动触发 `android-core` 发布。
 
-## Design
+## 设计方案
 
-The Android build job will expose the version produced by `check_version` as
-`FRIDA_VERSION`. It will clone Frida with `--branch "$FRIDA_VERSION"` and
-`--recurse-submodules`, so the superproject and its submodules start from the
-release-selected source tree.
+Android 构建任务会将 `check_version` 任务检测到的版本设置为
+`FRIDA_VERSION` 环境变量。克隆 Frida 时使用
+`--branch "$FRIDA_VERSION"` 和 `--recurse-submodules`，从一开始就检出
+Release 对应的 Frida 主仓库源码及其锁定的子模块版本。
 
-Immediately after cloning, the workflow will compare the checked-out `HEAD`
-with the commit referenced by `refs/tags/$FRIDA_VERSION`. A missing tag or a
-mismatch will stop the job before any patches are applied.
+克隆完成后，工作流会比较当前 `HEAD` 与
+`refs/tags/$FRIDA_VERSION` 指向的 commit。tag 不存在或 commit 不一致时，
+工作流会在应用任何 Ferida patch 之前立即失败。
 
-The existing Ferida patch loop and four-ABI Android build remain unchanged.
-Patch incompatibility with a new Frida release is expected to fail at
-`git am`; adapting such patches remains a deliberate manual task.
+现有的 Ferida patch 应用循环和四种 Android ABI 构建流程保持不变。如果新版
+Frida 与现有 patch 不兼容，`git am` 应当失败；这种 patch 适配仍由人工完成，
+不会尝试自动修改补丁。
 
-## Error Handling
+## 错误处理
 
-- Missing Frida release tag: `git clone --branch` fails.
-- Checked-out commit does not match the tag: the explicit verification fails.
-- Ferida patch conflicts with the new Frida source: `git am` fails.
-- No failure in this workflow triggers an `android-core` release.
+- Frida Release tag 不存在：`git clone --branch` 失败。
+- 检出的 commit 与 tag 不一致：显式一致性校验失败。
+- Ferida patch 与新版 Frida 冲突：`git am` 失败。
+- 上述失败均不会触发 `android-core` 发布。
 
-## Verification
+## 验证方式
 
-Because this is a workflow-only configuration change, verification will use:
+本次只修改 GitHub Actions 工作流配置，验证方式如下：
 
-1. A shell assertion that fails before the change because the clone command
-   does not select `FRIDA_VERSION`.
-2. The same assertion passing after the change.
-3. YAML parsing of the updated workflow.
-4. A diff review confirming that no `android-core` files or unrelated Ferida
-   behavior changed.
+1. 修改前运行 shell 断言；由于克隆命令没有选择 `FRIDA_VERSION`，断言应失败。
+2. 修改后再次运行相同断言，确认其通过。
+3. 解析修改后的 YAML，确认语法有效。
+4. 检查最终 diff，确认没有修改 `android-core` 文件或 Ferida 的其他行为。
